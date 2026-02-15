@@ -1047,6 +1047,7 @@ trait Implicits:
    *   - if one of T, U is a subtype of the lifted version of the other,
    *     unless strict equality is set.
    *   - if strictEqualityPatternMatching is set and the necessary conditions are met
+   *   - if one of the sides is Null and the other is a supertype of Null
    */
   def assumedCanEqual(ltp: Type, rtp: Type, leftTree: Tree = EmptyTree)(using Context): Boolean = {
     // Map all non-opaque abstract types to their upper bound.
@@ -1072,7 +1073,7 @@ trait Implicits:
     ltp.isError
     || rtp.isError
     || locally:
-      if strictEquality then
+      if strictEquality && !(ltp.isRef(defn.NullClass)) && !(rtp.isRef(defn.NullClass)) then
         strictEqualityPatternMatching &&
           (leftTree.symbol.isAllOf(Flags.EnumValue) || leftTree.symbol.isAllOf(Flags.Module | Flags.Case)) &&
           ltp <:< lift(rtp)
