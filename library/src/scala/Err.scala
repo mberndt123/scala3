@@ -10,12 +10,12 @@ object Err:
   //  uses a different erasure for Maybe than boostrapped
   //  3.10.0 compiler. `inline` is also benefical since it can
   //  remove the condition and the `if` when the argument is known.
-  inline def apply[E](e: E): Maybe[Nothing, E] =
+  inline def apply[E](e: E): Maybe[E, Nothing] =
     (if e == () then null else new runtime.Fail(e))
-      .asInstanceOf[Maybe[Nothing, E]]
+      .asInstanceOf[Maybe[E, Nothing]]
 
   /** Wll be replaced by compiler with specialized code */
-  def unapply[E](x: Maybe[Any, E]): Maybe[E, Nothing] = x.runtimeChecked match
+  def unapply[E](x: Maybe[E, Any]): Maybe[Nothing, E] = x.runtimeChecked match
     case Err(e) => Ok(e)
 
 

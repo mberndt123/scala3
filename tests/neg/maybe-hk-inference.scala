@@ -1,9 +1,9 @@
 //> using options -Yexplicit-nulls
 import language.experimental.errorHandling
 
-// Higher-kinded type inference for `Maybe` is left-biased: matching `F[_]`
-// against `T ? E` infers `F := [X] =>> X ? E`. Code that relies on abstracting
-// over the error type instead no longer typechecks without explicit type arguments.
+// `T ? E` is represented as `Maybe[E, T]`, so matching `F[_]` against `T ? E`
+// infers `F := [X] =>> X ? E`. Code that relies on abstracting over the error
+// type instead does not typecheck without explicit type arguments.
 
 def foo[F[_]](x: F[Int]): F[Boolean] = ???
 
@@ -13,7 +13,7 @@ def errorPosition(x: String ? Int) =
 def optionalError(x: String ? Int) =
   val _: String? = foo(x) // error
 
-// With left bias the value type must be the one that varies
+// The value type is the one that varies
 def extract[F[_], A](x: F[A]): A = ???
 
 def extracted(x: Int ? String) =

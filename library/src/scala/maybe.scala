@@ -9,10 +9,10 @@ object maybe {
 
   /** The type of abort labels to be used in a maybe block */
 
-  type CanErr[E] = Label[Maybe[Nothing, E]]
+  type CanErr[E] = Label[Maybe[E, Nothing]]
 
   /** Establish a maybe block with given `body` */
-  inline def apply[T, E](inline body: CanErr[E] ?=> T): Maybe[T, E] =
+  inline def apply[T, E](inline body: CanErr[E] ?=> T): Maybe[E, T] =
     boundary(Ok(body))
 
   /** If `cond` does not hold, abort with `()` error. Typically used in a `maybe` block:

@@ -2,8 +2,9 @@
 import language.experimental.errorHandling
 
 
-// Higher-kinded type inference for `Maybe` is left-biased: matching `F[_]`
-// against `T ? E` infers `F := [X] =>> X ? E`, not `[X] =>> T ? X`.
+// `T ? E` is represented as `Maybe[E, T]`, so the usual right-biased
+// higher-kinded type inference matches `F[_]` against `T ? E` by inferring
+// `F := [X] =>> X ? E`, just as it infers `[X] =>> Either[E, X]` for `Either[E, T]`.
 
 def foo[F[_]](x: F[Int]): F[Boolean] = ???
 
@@ -93,14 +94,36 @@ def alias(x: Result[Int]) =
   val _: Boolean ? String = foo(x)
 
 // Explicit type arguments can still abstract over the error type
-def explicitRight(x: String ? Int) =
+def explicitError(x: String ? Int) =
   val _: String ? Boolean = foo[[X] =>> String ? X](x)
 
-// A two-parameter type constructor matches `Maybe` directly
-def foo2[F[_, _]](x: F[Int, String]): F[Boolean, String] = ???
+// A two-parameter type constructor matches `Maybe` directly,
+// with the error type first
+def foo2[F[_, _]](x: F[String, Int]): F[String, Boolean] = ???
 
 def twoParams(x: Int ? String) =
   val _: Boolean ? String = foo2(x)
+
+// Type classes over both the error and the value type
+trait Bifunctor[F[_, _]]:
+  extension [A, B](x: F[A, B]) def bimap[C, D](f: A => C, g: B => D): F[C, D]
+
+given maybeBifunctor: Bifunctor[[E, T] =>> T ? E]:
+  extension [A, B](x: B ? A) def bimap[C, D](f: A => C, g: B => D): D ? C =
+    x.map(g).mapErr(f)
+
+given eitherBifunctor: Bifunctor[Either]:
+  extension [A, B](x: Either[A, B]) def bimap[C, D](f: A => C, g: B => D): Either[C, D] =
+    x.left.map(f).map(g)
+
+def bimapTwice[F[_, _]: Bifunctor, A, B](x: F[A, B])(f: A => A, g: B => B): F[A, B] =
+  x.bimap(f, g).bimap(f, g)
+
+def bifunctor(x: Int ? String, y: Either[String, Int]) =
+  val _: Int ? String = bimapTwice(x)(_ ++ "!", _ + 1)
+  val _: Either[String, Int] = bimapTwice(y)(_ ++ "!", _ + 1)
+  val _: Boolean ? Int = x.bimap(_.length, _ > 0)
+  val _: Int ? Unit = summon[Bifunctor[compiletime.Maybe]].bimap(x)(_ => (), identity)
 
 // Other type constructors keep right bias
 def either(x: Either[String, Int]) =

@@ -174,16 +174,17 @@ The subtyping rules subsume the ones for maybe types. We have additionally:
 
 ## Higher-kinded type inference
 
-Higher-kinded type inference in Scala is usually right-biased. This means that
-if an actual type constructor has more type parameters than a higher-kinded type parameter, the leftmost parameters are fixed and the rightmost parameters are lambda-abstracted. For instance, matching a type constructor `F[_]` with a type argument `Either[E, R]` would infer `[X] =>> E ? X`. This is the right thing for
-`Either`, but would be counter-intuitive for maybe types, since matching `F[_]` with
-`R ? E` would infer `[X] =>> R ? X`, whereas we would usually want to have `[X] =>> X ? E` inferred instead.
+Higher-kinded type inference in Scala is right-biased. This means that
+if an actual type constructor has more type parameters than a higher-kinded type parameter, the leftmost parameters are fixed and the rightmost parameters are lambda-abstracted. For instance, matching a type constructor `F[_]` with a type argument `Either[E, R]` infers `[X] =>> Either[E, X]`.
 
-Right biased higher-kinded type inference was arguably a design mistake caused by overfitting to the `Either` type and blindly copying Haskell. In Haskell, right bias makes sense because type parameters are curried, but in Scala and most other languages it feels unnatural.
+Maybe types list the result type before the error type, but the maybe type constructor takes its arguments in the conventional order, with the error type first: `R ? E` applies the maybe type constructor to `E` and then to `R`. So matching `F[_]` with `R ? E` infers `[X] =>> X ? E`, in the same way as for `Either`. Likewise, a type class over binary type constructors, such as a `Bifunctor[F[_, _]]`, sees the error type as the first and the result type as the second argument, which is again the same as for `Either`. The binary type constructor itself can be written as a type lambda `[E, R] =>> R ? E`.
 
-We fix the problem by making an exception specifically for maybe types, which use left bias instead. I.e. matching `F[_]` with `R ? E` will now infer `[X] =>> X ? E`,
-so the result is morally the same as for `Either`, even though the roles of the type parameters are swapped.
-
+Under `-Xkind-projector:underscores`, placeholders in maybe types are numbered in the same order, i.e. from right to left. So `_ ? _` is the binary maybe type constructor, `_ ? E` is `[X] =>> X ? E`, and `_?` is `[X] =>> X?`. For instance:
+```scala
+given Bifunctor[_ ? _] = ...
+given [E] => Functor[_ ? E] = ...
+```
+The same holds for `*` placeholders under `-Xkind-projector`.
 
 ## One error type with many uses
 
@@ -302,14 +303,14 @@ So, in terms of types, `maybe` and `?` are duals of each other. `maybe` maps a b
 
 ## Internals
 
-Maybe types are represented internally as instances of trait `scala.compiletime.Maybe`. `T?` is represented as `Maybe[T, Unit]` and `T ? E` is represented as `Maybe[T, E]`. The `Maybe` trait
+Maybe types are represented internally as instances of trait `scala.compiletime.Maybe`. `T?` is represented as `Maybe[Unit, T]` and `T ? E` is represented as `Maybe[E, T]`. Note that the order of the two types is reversed. The `Maybe` trait
 is defined as follows:
 
     ```scala
     package scala.compiletime
 
     @experimental
-    sealed trait Maybe[+T, +E] extends Any, Matchable:
+    sealed trait Maybe[+E, +T] extends Any, Matchable:
       def isEmpty: Boolean
       private[compiletime] def get: T
     ```
@@ -373,11 +374,11 @@ is defined as follows:
 
     class Either[+A, +B]
       ...
-      final def toMaybe: Maybe[B, Unit] = this match
+      final def toMaybe: B? = this match
         case Right(b) => Ok(b)
         case _ => null
 
-      final def toResult: Maybe[B, A] = this match
+      final def toResult: B ? A = this match
         case Right(b) => Ok(b)
         case Left(a) => Err(a)
 

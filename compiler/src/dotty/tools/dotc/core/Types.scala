@@ -5791,13 +5791,16 @@ object Types extends TypeUtils {
     def unapply(tp: MatchAlias): Option[Type] = Some(tp.alias)
   }
 
-  /** A constructor/extractor for `R ? E` types. The extractor also matches subtypes */
+  /** A constructor/extractor for `R ? E` types. The extractor also matches subtypes.
+   *  Note that `R ? E` is represented as `Maybe[E, R]`, i.e. the arguments of the
+   *  `Maybe` class are in reverse order relative to the pairs taken and returned here.
+   */
   object MaybeType {
     def apply(resTp: Type, errTp: Type)(using Context) =
-      defn.MaybeClass.typeRef.appliedTo(resTp, errTp)
+      defn.MaybeClass.typeRef.appliedTo(errTp, resTp)
 
     def unapply(tp: Type)(using Context): Option[(Type, Type)] = tp.dealias match
-      case AppliedType(tycon, resArg :: errArg :: Nil) if tycon.isRef(defn.MaybeClass) =>
+      case AppliedType(tycon, errArg :: resArg :: Nil) if tycon.isRef(defn.MaybeClass) =>
         Some((resArg, errArg))
       case tp: TypeProxy =>
         unapply(tp.superType)

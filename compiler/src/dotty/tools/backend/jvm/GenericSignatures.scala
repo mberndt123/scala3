@@ -483,7 +483,7 @@ object GenericSignatures {
    */
   private def maybeSig(tp: AppliedType)(using Context): Type =
     if erasure(tp).isRef(defn.ObjectClass) then defn.ObjectType
-    else tp.args.head
+    else tp.args.last
 
   // only refer to type params that will actually make it into the sig, this excludes:
   // * type parameters appearing in method parameters

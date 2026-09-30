@@ -1199,9 +1199,10 @@ object Parsers {
           if (prec < opPrec || leftAssoc && prec == opPrec) {
             opStack = opStack.tail
             recur {
-              migrateInfixOp(opInfo, isType):
+              val tree = migrateInfixOp(opInfo, isType):
                 atSpan(opInfo.operator.span `union` opInfo.operand.span `union` top.span):
                   InfixOp(opInfo.operand, opInfo.operator, top)
+              if isType then replaceMaybeKindProjectorPlaceholders(tree) else tree
             }
           }
           else top
@@ -2050,6 +2051,22 @@ object Parsers {
       (newParams, tparams.toList)
     }
 
+    /** Replaces kind-projector's `*` in the operands of maybe types `L ? R` and `L?`.
+     *  Since `L ? R` is represented as `Maybe[R, L]` (and `L?` as `Maybe[Unit, L]`),
+     *  placeholders are numbered in that order rather than in source order.
+     *  E.g. `* ? *` is `[E, T] =>> T ? E`, i.e. the `Maybe` type constructor itself.
+     */
+    private def replaceMaybeKindProjectorPlaceholders(tree: Tree): Tree =
+      if ctx.settings.XkindProjector.isDefault || !Feature.errorHandlingEnabled then tree
+      else tree match
+        case InfixOp(l, op @ Ident(tpnme.?), r) =>
+          val (List(r1, l1), tparams) = replaceKindProjectorPlaceholders(r :: l :: Nil): @unchecked
+          atSpan(tree.span)(lambdaAbstract(tparams, cpy.InfixOp(tree)(l1, op, r1)))
+        case PostfixOp(t, op @ Ident(tpnme.?)) if !isBackquoted(op) =>
+          val (List(t1), tparams) = replaceKindProjectorPlaceholders(t :: Nil): @unchecked
+          atSpan(tree.span)(lambdaAbstract(tparams, cpy.PostfixOp(tree)(t1, op)))
+        case _ => tree
+
     private def implicitKwPos(start: Int): Span =
       Span(start, start + nme.IMPLICITkw.asSimpleName.length)
 
@@ -2125,8 +2142,9 @@ object Parsers {
           then makeRetaining(t, captureSet(), tpnme.retains)
           else makeRetaining(t, Nil, tpnme.retainsCap)
       else if in.isIdent(nme.?) && Feature.errorHandlingEnabled && isPostfixQmark(isType = true) then
-        atSpan(t.span.start):
-          PostfixOp(t, typeIdent())
+        replaceMaybeKindProjectorPlaceholders:
+          atSpan(t.span.start):
+            PostfixOp(t, typeIdent())
       else
         t
     }

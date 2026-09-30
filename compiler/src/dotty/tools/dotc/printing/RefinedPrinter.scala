@@ -274,7 +274,7 @@ class RefinedPrinter(_ctx: Context) extends PlainPrinter(_ctx) {
     }
 
     def appliedText(tp: Type): Text = tp match
-      case AppliedType(tycon, r :: e :: Nil) if tycon.isRef(defn.MaybeClass) =>
+      case AppliedType(tycon, e :: r :: Nil) if tycon.isRef(defn.MaybeClass) =>
         if e.isRef(defn.UnitClass) then
           toTextLocal(r) ~ "?"
         else
@@ -647,11 +647,11 @@ class RefinedPrinter(_ctx: Context) extends PlainPrinter(_ctx) {
         then
           toText(tree.typeOpt)
         else if tpt.symbol == defn.MaybeClass && args.length == 2 then
-          if unsplice(args(1)).symbol == defn.UnitClass then
-            toTextLocal(args(0)) ~ "?"
+          if unsplice(args(0)).symbol == defn.UnitClass then
+            toTextLocal(args(1)) ~ "?"
           else
             changePrec(InfixPrec):
-              toText(args(0)) ~ " ? " ~ toText(args(1))
+              toText(args(1)) ~ " ? " ~ toText(args(0))
         else args match
           case arg :: _ if arg.isTerm =>
             toTextLocal(tpt) ~ "(" ~ Text(args.map(argText), ", ") ~ ")"
