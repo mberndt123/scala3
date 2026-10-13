@@ -2983,7 +2983,24 @@ trait Applications extends Compatibility {
           }
         val formalParamTypessForArg: List[List[Type]] =
           formalsForArg.map(argTypesOfFormal)
-        if (formalParamTypessForArg.forall(_.nonEmpty) &&
+        if untpd.isCompanionPlaceholderScope(arg) then
+          // If the formals of all alternatives refer to the same companion,
+          // `#` placeholders in the argument refer to that companion.
+          formalsForArg.map(formal => companionAnchor(formal.widenExpr, instantiate = false)) match
+            case (anchor: TypeRef) :: others
+            if others.forall:
+              case other: TypeRef => other frozen_=:= anchor
+              case _ => false
+            =>
+              val commonFormal =
+                if isUniform(formalsForArg)(_ frozen_=:= _) then formalsForArg.head.widenExpr
+                else anchor.appliedTo(anchor.typeParams.map(_ => WildcardType))
+              overload.println(i"pretype arg $arg with expected type $commonFormal")
+              withMode(Mode.ImplicitsEnabled) {
+                pt.cacheArg(arg, pt.typedArg(arg, commonFormal))
+              }
+            case _ =>
+        else if (formalParamTypessForArg.forall(_.nonEmpty) &&
             isUniform(formalParamTypessForArg)((x, y) => x.length == y.length)) {
           val commonParamTypes = formalParamTypessForArg.transpose.map(ps =>
             // Given definitions above, for i = 1,...,m,

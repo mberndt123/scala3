@@ -192,6 +192,12 @@ private[scala] object language:
      */
     @compileTimeOnly("`methodBlockEndMarkers` can only be used at compile time in import statements")
     object methodBlockEndMarkers
+
+    /** Experimental support for `#` as a placeholder for the companion object of the expected type,
+     *  e.g. `val xs: Vector[Int] = #(1, 2, 3)`.
+     */
+    @compileTimeOnly("`companionPlaceholders` can only be used at compile time in import statements")
+    object companionPlaceholders
   end experimental
 
   /** The deprecated object contains features that are no longer officially suypported in Scala.

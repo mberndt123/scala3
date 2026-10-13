@@ -219,8 +219,14 @@ object Scanners {
     }
 
     private var myLanguageImportContext: Context = ctx
+    private var myCompanionPlaceholdersEnabled = Feature.enabled(Feature.companionPlaceholders)
     def languageImportContext = myLanguageImportContext
-    final def languageImportContext_=(c: Context) = myLanguageImportContext = c
+    final def languageImportContext_=(c: Context) =
+      myLanguageImportContext = c
+      myCompanionPlaceholdersEnabled = featureEnabled(Feature.companionPlaceholders)
+
+    /** Can `#` start an expression? Cached since it is needed for every token. */
+    def companionPlaceholdersEnabled: Boolean = myCompanionPlaceholdersEnabled
 
     def featureEnabled(name: TermName) = Feature.enabled(name)(using languageImportContext)
     def erasedEnabled = featureEnabled(Feature.erasedDefinitions)
@@ -1096,6 +1102,7 @@ object Scanners {
     class LookaheadScanner(allowIndent: Boolean = false) extends Scanner(source, offset, allowIndent = allowIndent) {
       override protected def initialCharBufferSize = 8
       override def languageImportContext = Scanner.this.languageImportContext
+      override def companionPlaceholdersEnabled = Scanner.this.companionPlaceholdersEnabled
     }
 
     /** Skip matching pairs of `(...)` or `[...]` parentheses.
@@ -1206,10 +1213,16 @@ object Scanners {
       isSoftModifier && !lookahead.isColon
 
     def canStartStatTokens =
-      if migrateTo3 then canStartStatTokens2 else canStartStatTokens3
+      val tokens = if migrateTo3 then canStartStatTokens2 else canStartStatTokens3
+      if companionPlaceholdersEnabled then tokens | companionPlaceholderTokens else tokens
 
     def canStartExprTokens =
-      if migrateTo3 then canStartExprTokens2 else canStartExprTokens3
+      val tokens = if migrateTo3 then canStartExprTokens2 else canStartExprTokens3
+      if companionPlaceholdersEnabled then tokens | companionPlaceholderTokens else tokens
+
+    def canStartInfixExprTokens =
+      if companionPlaceholdersEnabled then Tokens.canStartInfixExprTokens | companionPlaceholderTokens
+      else Tokens.canStartInfixExprTokens
 
 // String Parsing -----------------------------------------------------------------
 

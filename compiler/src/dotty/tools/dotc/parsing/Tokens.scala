@@ -229,6 +229,9 @@ object Tokens extends TokensCommon {
 
   final val canStartExprTokens2: TokenSet = canStartExprTokens3 | BitSet(DO)
 
+  /** Tokens that can additionally start an expression under `experimental.companionPlaceholders` */
+  final val companionPlaceholderTokens: TokenSet = BitSet(HASH)
+
   final val canStartInfixTypeTokens: TokenSet = literalTokens | identifierTokens | BitSet(
     THIS, SUPER, USCORE, LPAREN, LBRACE, AT)
 

@@ -496,6 +496,16 @@ trait UntypedTreeInfo extends TreeInfo[Untyped] { self: Trees.Instance[Untyped] 
   def isFunctionWithUnknownParamType(tree: Tree): Boolean =
     functionWithUnknownParamType(tree).isDefined
 
+  /** Is `tree` an expression containing `#` companion placeholders that refer to
+   *  the companion of the expected type of `tree`?
+   */
+  def isCompanionPlaceholderScope(tree: Tree): Boolean = tree match
+    case CompanionPlaceholderScope(_) => true
+    case Parens(expr) => isCompanionPlaceholderScope(expr)
+    case Block(Nil, expr) => isCompanionPlaceholderScope(expr)
+    case NamedArg(_, expr) => isCompanionPlaceholderScope(expr)
+    case _ => false
+
   def isFunction(tree: Tree): Boolean = tree match
     case Function(_, _) | Match(EmptyTree, _) => true
     case Block(Nil, expr) => isFunction(expr)

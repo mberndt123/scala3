@@ -544,16 +544,27 @@ object Parsers {
      */
     var placeholderParams: List[ValDef] = Nil
 
+    /** The `#` companion placeholders in the current expression that are not yet
+     *  bound by a `CompanionPlaceholderScope`. They appear in reverse order.
+     */
+    var companionPlaceholders: List[Ident] = Nil
+
     def checkNoEscapingPlaceholders[T](op: => T): T =
       val savedPlaceholderParams = placeholderParams
+      val savedCompanionPlaceholders = companionPlaceholders
       val savedLanguageImportContext = in.languageImportContext
       placeholderParams = Nil
+      companionPlaceholders = Nil
       try op
       finally
         placeholderParams match
           case vd :: _ => syntaxError(UnboundPlaceholderParameter(), vd.span)
           case _ =>
+        companionPlaceholders match
+          case id :: _ => syntaxError(em"unbound companion placeholder `#`", id.span)
+          case _ =>
         placeholderParams = savedPlaceholderParams
+        companionPlaceholders = savedCompanionPlaceholders
         in.languageImportContext = savedLanguageImportContext
 
     def isWildcard(t: Tree): Boolean = t match {
@@ -561,6 +572,14 @@ object Parsers {
       case Typed(t1, _) => isWildcard(t1)
       case Annotated(t1, _) => isWildcard(t1)
       case Parens(t1) => isWildcard(t1)
+      case _ => false
+    }
+
+    def isCompanionPlaceholder(t: Tree): Boolean = t match {
+      case Ident(nme.COMPANION_PLACEHOLDER) => companionPlaceholders.nonEmpty
+      case Typed(t1, _) => isCompanionPlaceholder(t1)
+      case Annotated(t1, _) => isCompanionPlaceholder(t1)
+      case Parens(t1) => isCompanionPlaceholder(t1)
       case _ => false
     }
 
@@ -2635,12 +2654,19 @@ object Parsers {
           singleCaseMatch()
         case _ =>
           val saved = placeholderParams
+          val savedCompanion = companionPlaceholders
           placeholderParams = Nil
+          companionPlaceholders = Nil
 
           def wrapPlaceholders(t: Tree) = try
-            if (placeholderParams.isEmpty) t
-            else new WildcardFunction(placeholderParams.reverse, t)
-          finally placeholderParams = saved
+            val t1 =
+              if companionPlaceholders.isEmpty then t
+              else atSpan(t.span) { CompanionPlaceholderScope(t) }
+            if (placeholderParams.isEmpty) t1
+            else new WildcardFunction(placeholderParams.reverse, t1)
+          finally
+            placeholderParams = saved
+            companionPlaceholders = savedCompanion
 
           val t = expr1(location)
           if in.isArrow then
@@ -2649,9 +2675,15 @@ object Parsers {
               wrapPlaceholders(t)
             else
               placeholderParams = Nil // don't interpret `_' to the left of `=>` as placeholder
+              companionPlaceholders = Nil
               wrapPlaceholders(closureRest(start, location, convertToParams(t)))
           else if isWildcard(t) then
             placeholderParams = placeholderParams ::: saved
+            companionPlaceholders = savedCompanion
+            t
+          else if isCompanionPlaceholder(t) then
+            placeholderParams = saved
+            companionPlaceholders = companionPlaceholders ::: savedCompanion
             t
           else
             checkNonParamTuple(t)
@@ -2963,7 +2995,7 @@ object Parsers {
     def postfixExprRest(t: Tree, location: Location): Tree =
       infixOps(t, in.canStartExprTokens, prefixExpr, location, ParseKind.Expr,
         isOperator = !(location.inArgs && followingIsVararg())
-                     && nextCanFollowOperator(canStartInfixExprTokens))
+                     && nextCanFollowOperator(in.canStartInfixExprTokens))
 
     /** PrefixExpr       ::= [PrefixOperator'] SimpleExpr
      *  PrefixOperator   ::=  ‘-’ | ‘+’ | ‘~’ | ‘!’ (if not backquoted)
@@ -3024,6 +3056,10 @@ object Parsers {
             .withSpan(Span(start))
           placeholderParams = param :: placeholderParams
           atSpan(start) { Ident(pname) }
+        case HASH if in.companionPlaceholdersEnabled =>
+          val placeholder = atSpan(in.skipToken()) { Ident(nme.COMPANION_PLACEHOLDER) }
+          companionPlaceholders = placeholder :: companionPlaceholders
+          placeholder
         case LPAREN =>
           atSpan(in.offset) { makeTupleOrParens(inParensWithCommas(exprsInParensOrBindings())) }
         case LBRACE | INDENT =>

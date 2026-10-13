@@ -120,6 +120,12 @@ object untpd extends Trees.Instance[Untyped] with UntypedTreeInfo {
   case class ContextBoundTypeTree(tycon: Tree, paramName: TypeName, ownName: TermName)(implicit @constructorOnly src: SourceFile) extends Tree
   case class MacroTree(expr: Tree)(implicit @constructorOnly src: SourceFile) extends Tree
 
+  /** The scope of `#` companion placeholders in `body`. Every `Ident(nme.COMPANION_PLACEHOLDER)`
+   *  in `body` that is not enclosed in a nested scope refers to the companion object of the
+   *  expected type of this tree.
+   */
+  case class CompanionPlaceholderScope(body: Tree)(implicit @constructorOnly src: SourceFile) extends TermTree
+
   case class ImportSelector(imported: Ident, renamed: Tree = EmptyTree, bound: Tree = EmptyTree)(implicit @constructorOnly src: SourceFile) extends Tree {
     // TODO: Make bound a typed tree?
 
@@ -768,6 +774,10 @@ object untpd extends Trees.Instance[Untyped] with UntypedTreeInfo {
       case tree: MacroTree if expr `eq` tree.expr => tree
       case _ => finalize(tree, untpd.MacroTree(expr)(using tree.source))
     }
+    def CompanionPlaceholderScope(tree: Tree)(body: Tree)(using Context): Tree = tree match {
+      case tree: CompanionPlaceholderScope if body `eq` tree.body => tree
+      case _ => finalize(tree, untpd.CompanionPlaceholderScope(body)(using tree.source))
+    }
   }
 
   abstract class UntypedTreeMap(cpy: UntypedTreeCopier = untpd.cpy) extends TreeMap(cpy) {
@@ -821,6 +831,8 @@ object untpd extends Trees.Instance[Untyped] with UntypedTreeInfo {
         tree
       case MacroTree(expr) =>
         cpy.MacroTree(tree)(transform(expr))
+      case CompanionPlaceholderScope(body) =>
+        cpy.CompanionPlaceholderScope(tree)(transform(body))
       case CapturesAndResult(refs, parent) =>
         cpy.CapturesAndResult(tree)(transform(refs), transform(parent))
       case UseRef(ref, initially) =>
@@ -882,6 +894,8 @@ object untpd extends Trees.Instance[Untyped] with UntypedTreeInfo {
         this(x, splice)
       case MacroTree(expr) =>
         this(x, expr)
+      case CompanionPlaceholderScope(body) =>
+        this(x, body)
       case CapturesAndResult(refs, parent) =>
         this(this(x, refs), parent)
       case UseRef(ref, _) =>

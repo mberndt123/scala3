@@ -117,6 +117,13 @@ object Typer {
    */
   private[typer] val InsertedTyped = new Property.Key[Unit]
 
+  /** A context property holding what `#` companion placeholders in the
+   *  innermost enclosing `CompanionPlaceholderScope` refer to: either the
+   *  companion object of the scope's expected type, or an error message
+   *  explaining why there is none.
+   */
+  private val CompanionPlaceholder = new Property.Key[TermRef | Message]
+
   /** Is tree a compiler-generated `.apply` node that refers to the apply of a function class?
    *  @param onlyLast  If true, a synthetic application qualifies only if it cannot
    *                   immediately be followed by another one.
@@ -680,6 +687,9 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
     if name == nme.ROOTPKG then
       return checkLegalValue(tree.withType(defn.RootPackage.termRef), pt)
 
+    if name == nme.COMPANION_PLACEHOLDER then
+      return typedCompanionPlaceholder(tree, pt)
+
     val rawType =
       val saved1 = unimported
       val saved2 = foundUnderScala2
@@ -816,6 +826,83 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
    *      not refer to a package or Java companion object.
    *  (2) Check that a stable identifier pattern is indeed stable (SLS 8.1.5)
    */
+  /** A `#` placeholder refers to the companion recorded by the enclosing
+   *  `CompanionPlaceholderScope`.
+   */
+  def typedCompanionPlaceholder(tree: untpd.Ident, pt: Type)(using Context): Tree =
+    ctx.property(CompanionPlaceholder) match
+      case Some(companion: TermRef) =>
+        checkLegalValue(ref(companion).withSpan(tree.span), pt)
+      case Some(msg: Message) =>
+        errorTree(tree, msg)
+      case None =>
+        errorTree(tree, em"unbound companion placeholder `#`")
+
+  /** Type `tree.body` so that the `#` placeholders it contains refer to the
+   *  companion object of `pt`.
+   */
+  def typedCompanionPlaceholderScope(tree: untpd.CompanionPlaceholderScope, pt: Type, locked: TypeVars)(using Context): Tree =
+    val companion = expectedCompanion(pt)
+    typedUnadapted(tree.body, pt, locked)(using ctx.fresh.setProperty(CompanionPlaceholder, companion))
+
+  private def noCompanion(tp: Type)(using Context): Message =
+    em"`#` refers to the companion object of the expected type, but $tp has no companion object"
+
+  /** The reference to the class or opaque type whose companion a `#` placeholder
+   *  with expected type `pt` refers to, or an error message if there is none.
+   *  @param instantiate  If the expected type is a type variable whose upper bound does not
+   *                      determine a companion, try to instantiate the type variable instead,
+   *                      analogous to what is done for function literals in `typedFunction`.
+   */
+  def companionAnchor(pt: Type, instantiate: Boolean)(using Context): TypeRef | Message =
+    def loop(tp: Type): TypeRef | Message = tp.dealiasKeepOpaques match
+      case tp: TypeRef =>
+        val sym = tp.symbol
+        if sym.isClass || sym.isOpaqueAlias then tp
+        else noCompanion(tp)
+      case FlexibleType(tp) =>
+        loop(tp)
+      case tp: AppliedType =>
+        loop(tp.tycon)
+      case tp: TypeVar =>
+        if tp.isInstantiated then loop(tp.instanceOpt)
+        else loop(TypeComparer.fullUpperBound(tp.origin)) match
+          case _: Message if instantiate && isFullyDefined(tp, ForceDegree.flipBottom) =>
+            loop(tp.instanceOpt)
+          case result => result
+      case tp: AnnotatedType => loop(tp.parent)
+      case tp: RefinedType => loop(tp.parent)
+      case tp: RecType => loop(tp.parent)
+      case tp: OrType if tp.isNullableUnion => loop(tp.stripNull())
+      case tp => noCompanion(tp)
+    pt match
+      case _: ProtoType | _: WildcardType | NoType =>
+        em"`#` refers to the companion object of the expected type, but there is no expected type"
+      case _ =>
+        loop(pt)
+
+  /** The companion object of the class or opaque type `anchor`, or an error message
+   *  if there is no such companion.
+   */
+  def companionOf(anchor: TypeRef)(using Context): TermRef | Message =
+    val sym = anchor.symbol
+    val companion =
+      if sym.isClass then sym.companionModule
+      else anchor.prefix.member(sym.name.toTermName)
+        .suchThat(companion => companion.is(Module) && companion.owner == sym.owner)
+        .symbol
+    if !companion.exists || companion.is(PhantomSymbol) then noCompanion(anchor)
+    else if anchor.prefix eq NoPrefix then companion.termRef
+    else TermRef(anchor.prefix, companion.asTerm)
+
+  /** The companion object that a `#` placeholder with expected type `pt` refers to,
+   *  or an error message if there is none.
+   */
+  def expectedCompanion(pt: Type)(using Context): TermRef | Message =
+    companionAnchor(pt, instantiate = true) match
+      case anchor: TypeRef => companionOf(anchor)
+      case msg: Message => msg
+
   private def checkLegalValue(tree: Tree, pt: Type)(using Context): Tree =
     val tree1 = checkValue(tree, pt)
     if ctx.mode.is(Mode.Pattern)
@@ -4027,6 +4114,7 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
           case tree: untpd.QuotePattern => typedQuotePattern(tree, pt)
           case tree: untpd.SplicePattern => typedSplicePattern(tree, pt)
           case tree: untpd.MacroTree => report.error("Unexpected macro", tree.srcPos); tpd.nullLiteral  // ill-formed code may reach here
+          case tree: untpd.CompanionPlaceholderScope => typedCompanionPlaceholderScope(tree, pt, locked)
           case tree: untpd.Hole => typedHole(tree, pt)
           case tree: untpd.Parens =>
             checkDeprecatedAssignmentSyntax(tree)
