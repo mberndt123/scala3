@@ -83,3 +83,19 @@
    |           rightFunctor[T]
    |
    |       But given instance rightFunctor does not match type Functor[[T] =>> T ? Int].
+-- [E172] Type Error: tests/neg/left-bias.scala:55:38 ------------------------------------------------------------------
+55 |  summon[Bifunctor[compiletime.Maybe]] // error
+   |                                      ^
+   |No given instance of type Bifunctor[[T, E] =>> T ? E] was found for parameter x of method summon in object Predef.
+   |I found:
+   |
+   |    maybeBifunctor
+   |
+   |But Found:    (maybeBifunctor : Bifunctor[[E, T] =>> T ? E])
+   |Required: Bifunctor[[T², E²] =>> T² ? E²]
+   |
+   |where:    E  is a type variable
+   |          E² is a type variable
+   |          T  is a type variable
+   |          T² is a type variable
+   |.

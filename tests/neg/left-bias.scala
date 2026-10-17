@@ -43,3 +43,13 @@ def fmapTwice[F[_]: Functor, A](x: F[A])(f: A => A): F[A] =
 
 def functor(x: String ? Int) =
   fmapTwice(x)(_ + 1) // error
+
+// The reversal applies only to inference. `Maybe` itself still takes the
+// value type first, so an instance for `[E, T] =>> T ? E` is not an instance
+// for `Maybe`.
+trait Bifunctor[F[_, _]]
+
+given maybeBifunctor: Bifunctor[[E, T] =>> T ? E] = ???
+
+def explicitMaybe =
+  summon[Bifunctor[compiletime.Maybe]] // error

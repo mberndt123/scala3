@@ -1272,14 +1272,18 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
      *
      *    adaptedTycon := [T_0, ..., T_k-1] =>> otherTycon[bodyArgs]
      *
-     *  Exception: If `otherTycon` is the `Maybe` constructor, we choose left bias
-     *  instead of right bias and define
-     *
-     *    bodyArgs := T_0, ..., T_k-1, otherArgs.dropRight(d)
-     *
      *  where the bounds of `T_i` are set based on the bounds of `otherTycon.typeParams(d+i)`
      *  after substituting type parameter references by the corresponding argument
      *  in `bodyArgs` (see `adaptedBounds` in the implementation).
+     *
+     *  Exception: If `otherTycon` is the `Maybe` constructor, we treat it as if its
+     *  type parameters were declared in reverse order. That is, we choose left bias
+     *  instead of right bias and reverse the order of the abstracted parameters:
+     *
+     *    bodyArgs := T_k-1, ..., T_0, otherArgs.takeRight(d)
+     *
+     *  This is done even if `d == 0`, so that e.g. `?F[A, B]` matched with `T ? E`
+     *  gives `adaptedTycon := [X, Y] =>> Y ? X`, `A := E` and `B := T`.
      *
      *  Historical note: this strategy is known in Scala as "partial unification"
      *  (even though the type constructor variable isn't actually unified but only
@@ -1300,17 +1304,21 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
       val d = otherArgs.length - args.length
       d >= 0 && {
         val tparams = tycon.typeParams
-        val leftBias = otherTycon.classSymbol == defn.MaybeClass
+        // Only `Maybe` itself is reversed; aliases keep their declared parameter order
+        val leftBias = otherTycon.typeSymbol == defn.MaybeClass
+        /** The type parameters of `otherTycon` that are abstracted, in the order
+         *  of the parameters of `adaptedTycon`
+         */
         val remainingTparams =
-          if leftBias then otherTycon.typeParams.dropRight(d) else otherTycon.typeParams.drop(d)
+          if leftBias then otherTycon.typeParams.dropRight(d).reverse else otherTycon.typeParams.drop(d)
         variancesConform(remainingTparams, tparams) && {
           val adaptedTycon =
-            if d > 0 then
+            if d > 0 || leftBias && args.length > 1 then
               val fixedArgs =
                 if leftBias then otherArgs.takeRight(d) else otherArgs.take(d)
               /** The arguments passed to `otherTycon` in the body of `tl` */
               def bodyArgs(tl: HKTypeLambda) =
-                if leftBias then tl.paramRefs ++ fixedArgs else fixedArgs ++ tl.paramRefs
+                if leftBias then tl.paramRefs.reverse ++ fixedArgs else fixedArgs ++ tl.paramRefs
               /** The bounds of the type parameters of `tl` */
               def adaptedBounds(tl: HKTypeLambda) =
                 val bodyArgsComputed = bodyArgs(tl)
@@ -1390,7 +1398,8 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
           def loop(tycon1: Type, args1: List[Type]): Boolean = tycon1 match {
             case tycon1: TypeParamRef =>
               (tycon1 == tycon2 ||
-               canConstrain(tycon1) && isSubType(tycon1, tycon2)) &&
+               // `Maybe` is matched with reversed type parameters by compareAppliedTypeParamRef
+               tycon2.typeSymbol != defn.MaybeClass && canConstrain(tycon1) && isSubType(tycon1, tycon2)) &&
               isSubArgs(args1, args2, tp1, tparams)
             case tycon1: TypeRef =>
               tycon2 match {

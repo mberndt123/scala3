@@ -184,6 +184,12 @@ Right biased higher-kinded type inference was arguably a design mistake caused b
 We fix the problem by making an exception specifically for maybe types, which use left bias instead. I.e. matching `F[_]` with `R ? E` will now infer `[X] =>> X ? E`,
 so the result is morally the same as for `Either`, even though the roles of the type parameters are swapped.
 
+More generally, higher-kinded type inference treats the maybe type constructor as if its type parameters were declared in reverse order. This also applies to type constructors with two type parameters: matching `F[_, _]` with `R ? E` infers `[X, Y] =>> Y ? X`, so that, as for `Either`, the first type argument of `F` is the error type and the second one is the result type. Type classes over binary type constructors such as a `Bifunctor[F[_, _]]` therefore work the same way for `Either` and for maybe types. An instance for maybe types is declared for that type lambda:
+```scala
+given Bifunctor[[E, R] =>> R ? E] = ...
+```
+The reversal only affects type inference. The maybe type constructor itself, `scala.compiletime.Maybe`, takes the result type first, so `Bifunctor[Maybe]` is a different type from `Bifunctor[[E, R] =>> R ? E]`.
+
 
 ## One error type with many uses
 

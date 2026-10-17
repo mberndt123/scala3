@@ -2,8 +2,10 @@
 import language.experimental.errorHandling
 
 
-// Higher-kinded type inference for `Maybe` is left-biased: matching `F[_]`
-// against `T ? E` infers `F := [X] =>> X ? E`, not `[X] =>> T ? X`.
+// Higher-kinded type inference treats `Maybe` as if its type parameters were
+// in reverse order: matching `F[_]` against `T ? E` infers `F := [X] =>> X ? E`,
+// not `[X] =>> T ? X`, and matching `F[_, _]` against `T ? E` infers
+// `F := [X, Y] =>> Y ? X`, so that the error type comes first, as for `Either`.
 
 def foo[F[_]](x: F[Int]): F[Boolean] = ???
 
@@ -96,11 +98,45 @@ def alias(x: Result[Int]) =
 def explicitRight(x: String ? Int) =
   val _: String ? Boolean = foo[[X] =>> String ? X](x)
 
-// A two-parameter type constructor matches `Maybe` directly
-def foo2[F[_, _]](x: F[Int, String]): F[Boolean, String] = ???
+// A two-parameter type constructor sees the error type first
+def foo2[F[_, _]](x: F[String, Int]): F[String, Boolean] = ???
 
 def twoParams(x: Int ? String) =
   val _: Boolean ? String = foo2(x)
+
+// Type classes over both the error and the value type
+trait Bifunctor[F[_, _]]:
+  extension [A, B](x: F[A, B]) def bimap[C, D](f: A => C, g: B => D): F[C, D]
+
+given maybeBifunctor: Bifunctor[[E, T] =>> T ? E]:
+  extension [A, B](x: B ? A) def bimap[C, D](f: A => C, g: B => D): D ? C =
+    x.map(g).mapErr(f)
+
+given eitherBifunctor: Bifunctor[Either]:
+  extension [A, B](x: Either[A, B]) def bimap[C, D](f: A => C, g: B => D): Either[C, D] =
+    x.left.map(f).map(g)
+
+def bimapTwice[F[_, _]: Bifunctor, A, B](x: F[A, B])(f: A => A, g: B => B): F[A, B] =
+  x.bimap(f, g).bimap(f, g)
+
+def bifunctor(x: Int ? String, y: Either[String, Int], z: Int?) =
+  val _: Int ? String = bimapTwice(x)(_ ++ "!", _ + 1)
+  val _: Either[String, Int] = bimapTwice(y)(_ ++ "!", _ + 1)
+  val _: Int? = bimapTwice(z)(identity, _ + 1)
+  val _: Boolean ? Int = x.bimap(_.length, _ > 0)
+
+// A functor over the value type, derived from a two-parameter type constructor
+def rightMap[F[_, _], E, A, B](x: F[E, A])(f: A => B)(using Functor[[X] =>> F[E, X]]): F[E, B] =
+  x.fmap(f)
+
+def derived(x: Int ? String) =
+  val _: Boolean ? String = rightMap(x)(_ > 0)
+
+// Aliases keep their declared parameter order
+type Res[+E, +T] = T ? E
+
+def errorFirstAlias(x: Res[String, Int]) =
+  val _: Res[String, Int] = bimapTwice(x)(_ ++ "!", _ + 1)
 
 // Other type constructors keep right bias
 def either(x: Either[String, Int]) =
