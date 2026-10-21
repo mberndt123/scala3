@@ -410,6 +410,12 @@ object language {
     @compileTimeOnly("`methodBlockEndMarkers` can only be used at compile time in import statements")
     object methodBlockEndMarkers
 
+    /** Experimental support for definitions in the condition block of an `if` or
+     *  `while` that are visible in its branches or loop body.
+     */
+    @compileTimeOnly("`conditionBindings` can only be used at compile time in import statements")
+    object conditionBindings
+
     /** Experimental support for single-line lambdas and case clause expressions after `:`
      */
     @compileTimeOnly("`relaxedLambdaSyntax` can only be used at compile time in import statements")

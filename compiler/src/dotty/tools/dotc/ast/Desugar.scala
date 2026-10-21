@@ -1774,6 +1774,46 @@ object desugar {
       tree
   }
 
+  /** Under `experimental.conditionBindings`, if the condition of an if-expression
+   *  is a block that contains definitions, make them visible in the branches:
+   *
+   *      if { stats; cond } then thenp else elsep
+   *  ==>
+   *      { stats; if cond then thenp else elsep }
+   */
+  def ifExpr(tree: If)(using Context): Tree = tree.cond match
+    case Block(stats, expr) if hasConditionBindings(stats) =>
+      Block(stats, cpy.If(tree)(expr, tree.thenp, tree.elsep)).withSpan(tree.span)
+    case _ =>
+      tree
+
+  /** Under `experimental.conditionBindings`, if the condition of a while loop is a block
+   *  that contains definitions, make them visible in the body:
+   *
+   *      while { stats; cond } do body
+   *  ==>
+   *      while { stats; if cond then { body; true } else false } do ()
+   */
+  def whileDo(tree: WhileDo)(using Context): WhileDo = tree match
+    case WhileDo(cond @ Block(stats, expr), body)
+    if hasConditionBindings(stats) && !isUnitLiteral(body) =>
+      val exit = body.span.endPos
+      val ifExpr = If(expr,
+        Block(body :: Nil, Literal(Constant(true)).withSpan(exit)),
+        Literal(Constant(false)).withSpan(exit)
+      ).withSpan(expr.span.union(body.span).toSynthetic)
+      cpy.WhileDo(tree)(cpy.Block(cond)(stats, ifExpr), syntheticUnitLiteral.withSpan(exit))
+    case _ =>
+      tree
+
+  private def hasConditionBindings(condStats: List[Tree])(using Context): Boolean =
+    Feature.enabled(Feature.conditionBindings)
+    && condStats.exists(stat => stat.isInstanceOf[DefTree | ImportOrExport])
+
+  private def isUnitLiteral(tree: Tree): Boolean = tree match
+    case Literal(Constant(())) | Tuple(Nil) => true
+    case _ => false
+
   /** Translate infix operation expression
     *
     *     l op r     ==>    l.op(r)  if op is left-associative

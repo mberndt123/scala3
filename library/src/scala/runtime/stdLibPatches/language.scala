@@ -192,6 +192,12 @@ private[scala] object language:
      */
     @compileTimeOnly("`methodBlockEndMarkers` can only be used at compile time in import statements")
     object methodBlockEndMarkers
+
+    /** Experimental support for definitions in the condition block of an `if` or
+     *  `while` that are visible in its branches or loop body.
+     */
+    @compileTimeOnly("`conditionBindings` can only be used at compile time in import statements")
+    object conditionBindings
   end experimental
 
   /** The deprecated object contains features that are no longer officially suypported in Scala.

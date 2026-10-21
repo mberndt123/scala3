@@ -16,6 +16,7 @@ They are enabled by importing the feature or using the `-language` compiler flag
 * [`genericNumberLiterals`](./numeric-literals.md): Enable support for generic number literals.
 * [`namedTypeArguments`](./named-typeargs.md): Enable support for named type arguments
 * [`saferExceptions`](./canthrow.md): Enable support for checked exceptions.
+* [`conditionBindings`](./condition-bindings.md): Make definitions in the condition block of an `if` or `while` visible in its branches or body.
 
 ## Experimental language imports
 
