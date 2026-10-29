@@ -13,7 +13,7 @@ sealed trait CanEqual[-L, -R]
  *  CanEqual instances involving primitive types or the Null type are handled directly in
  *  the compiler (see Implicits.synthesizedCanEqual), so they are not included here.
  */
-object CanEqual {
+object CanEqual extends CanEqualJavaTimeInstances {
   /** A universal `CanEqual` instance. */
   object derived extends CanEqual[Any, Any]
 
@@ -30,6 +30,9 @@ object CanEqual {
   // Instances of `CanEqual` for common Java types
   given canEqualNumber: CanEqual[Number, Number] = derived
   given canEqualString: CanEqual[String, String] = derived
+  given canEqualUUID: CanEqual[java.util.UUID, java.util.UUID] = derived
+  given canEqualURI: CanEqual[java.net.URI, java.net.URI] = derived
+  given canEqualJavaEnum[E <: java.lang.Enum[E]]: CanEqual[E, E] = derived
 
   // The following definitions can go into the companion objects of their corresponding
   // classes. For now they are here in order not to have to touch the
@@ -49,4 +52,8 @@ object CanEqual {
   given canEqualEither[L1, R1, L2, R2](
     using eqL: CanEqual[L1, L2], eqR: CanEqual[R1, R2]
   ): CanEqual[Either[L1, R1], Either[L2, R2]] = derived
+
+  given canEqualTry[T, U](using eq: CanEqual[T, U]): CanEqual[scala.util.Try[T], scala.util.Try[U]] = derived
+
+  given canEqualDuration: CanEqual[scala.concurrent.duration.Duration, scala.concurrent.duration.Duration] = derived
 }

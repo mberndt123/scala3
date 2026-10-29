@@ -18,6 +18,14 @@ object MiMaFilters {
         // new experimental language feature: method block end markers (SIP-77)
         ProblemFilters.exclude[MissingClassProblem]("scala.language$experimental$methodBlockEndMarkers$"),
         ProblemFilters.exclude[MissingClassProblem]("scala.runtime.stdLibPatches.language$experimental$methodBlockEndMarkers$"),
+        // new `CanEqual` instances
+        ProblemFilters.exclude[DirectMissingMethodProblem]("scala.CanEqual.canEqualUUID"),
+        ProblemFilters.exclude[DirectMissingMethodProblem]("scala.CanEqual.canEqualURI"),
+        ProblemFilters.exclude[DirectMissingMethodProblem]("scala.CanEqual.canEqualJavaEnum"),
+        ProblemFilters.exclude[DirectMissingMethodProblem]("scala.CanEqual.canEqualTry"),
+        ProblemFilters.exclude[DirectMissingMethodProblem]("scala.CanEqual.canEqualDuration"),
+        ProblemFilters.exclude[MissingTypesProblem]("scala.CanEqual$"),
+        ProblemFilters.exclude[MissingClassProblem]("scala.CanEqualJavaTimeInstances"),
       ),
 
       // Additions since last LTS
