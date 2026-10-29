@@ -2781,6 +2781,29 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
     assignType(cpy.RefinedTypeTree(tree)(tpt1, refinements1), tpt1, refinements1, refineCls)
   }
 
+  /** Under `experimental.typeLambdaKindInference`: given a type lambda `[X1, ..., Xn] =>> T`
+   *  passed as an argument for a type parameter with bounds `expected`, give each
+   *  parameter `Xi` without bounds or type parameters of its own the kind of the
+   *  corresponding parameter of `expected`, as computed by `topType`. Only the kind is
+   *  propagated, not the upper bound itself, so lambdas that are already well-kinded
+   *  keep their meaning. Bounds of inner parameters are kept, since lambda parameters
+   *  are contravariant and dropping them would make the parameter too narrow.
+   */
+  private def withExpectedParamKinds(tree: untpd.LambdaTypeTree, expected: Type)(using Context): untpd.LambdaTypeTree =
+    val hi = expected.hiBound
+    val expectedParams = if hi.isAnyKind then Nil else hi.typeParams
+    if expectedParams.length != tree.tparams.length then tree
+    else
+      val tparams1 = tree.tparams.zipWithConserve(expectedParams):
+        case (tdef @ untpd.TypeDef(_, untpd.WildcardTypeBoundsTree()), expectedParam) =>
+          val kind = expectedParam.paramInfo.hiBound.topType
+          if kind.isLambdaSub && !kind.isAnyKind then
+            val hiTree = untpd.TypedSplice(TypeTree(kind).withSpan(tdef.rhs.span))
+            untpd.cpy.TypeDef(tdef)(rhs = untpd.TypeBoundsTree(EmptyTree, hiTree).withSpan(tdef.rhs.span))
+          else tdef
+        case (tdef, _) => tdef
+      untpd.cpy.LambdaTypeTree(tree)(tparams1, tree.body)
+
   def typedAppliedTypeTree(tree: untpd.AppliedTypeTree)(using Context): Tree = {
     val tpt1 = withoutMode(Mode.Pattern):
       typed(tree.tpt, AnyTypeConstructorProto)
@@ -2833,8 +2856,11 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
               (if (untpd.isVarPattern(arg)) desugar.patternVar(arg) else arg, tparamBounds)
             else if ctx.mode.isQuotedPattern then
               (arg, tparamBounds)
-            else
-              (arg, WildcardType)
+            else arg match
+              case arg: untpd.LambdaTypeTree if Feature.enabled(Feature.typeLambdaKindInference) =>
+                (withExpectedParamKinds(arg, tparamBounds), WildcardType)
+              case _ =>
+                (arg, WildcardType)
           arg match {
             case untpd.WildcardTypeBoundsTree()
             if tparam.paramInfo.isLambdaSub &&

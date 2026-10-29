@@ -18,6 +18,9 @@ object MiMaFilters {
         // new experimental language feature: method block end markers (SIP-77)
         ProblemFilters.exclude[MissingClassProblem]("scala.language$experimental$methodBlockEndMarkers$"),
         ProblemFilters.exclude[MissingClassProblem]("scala.runtime.stdLibPatches.language$experimental$methodBlockEndMarkers$"),
+        // new experimental language feature: kind inference for type lambda parameters
+        ProblemFilters.exclude[MissingClassProblem]("scala.language$experimental$typeLambdaKindInference$"),
+        ProblemFilters.exclude[MissingClassProblem]("scala.runtime.stdLibPatches.language$experimental$typeLambdaKindInference$"),
       ),
 
       // Additions since last LTS

@@ -411,6 +411,11 @@ object language {
     @compileTimeOnly("`methodBlockEndMarkers` can only be used at compile time in import statements")
     object methodBlockEndMarkers
 
+    /** Experimental support for inferring the kinds of type lambda parameters from the expected type
+     */
+    @compileTimeOnly("`typeLambdaKindInference` can only be used at compile time in import statements")
+    object typeLambdaKindInference
+
     /** Experimental support for single-line lambdas and case clause expressions after `:`
      */
     @compileTimeOnly("`relaxedLambdaSyntax` can only be used at compile time in import statements")

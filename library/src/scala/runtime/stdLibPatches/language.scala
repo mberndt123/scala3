@@ -192,6 +192,11 @@ private[scala] object language:
      */
     @compileTimeOnly("`methodBlockEndMarkers` can only be used at compile time in import statements")
     object methodBlockEndMarkers
+
+    /** Experimental support for inferring the kinds of type lambda parameters from the expected type
+     */
+    @compileTimeOnly("`typeLambdaKindInference` can only be used at compile time in import statements")
+    object typeLambdaKindInference
   end experimental
 
   /** The deprecated object contains features that are no longer officially suypported in Scala.
