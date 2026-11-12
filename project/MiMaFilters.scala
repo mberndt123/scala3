@@ -18,6 +18,9 @@ object MiMaFilters {
         // new experimental language feature: method block end markers (SIP-77)
         ProblemFilters.exclude[MissingClassProblem]("scala.language$experimental$methodBlockEndMarkers$"),
         ProblemFilters.exclude[MissingClassProblem]("scala.runtime.stdLibPatches.language$experimental$methodBlockEndMarkers$"),
+        // new experimental language feature: control expressions as infix operands
+        ProblemFilters.exclude[MissingClassProblem]("scala.language$experimental$controlExprOperands$"),
+        ProblemFilters.exclude[MissingClassProblem]("scala.runtime.stdLibPatches.language$experimental$controlExprOperands$"),
       ),
 
       // Additions since last LTS

@@ -1145,6 +1145,12 @@ object Parsers {
       isParamsAndArrow()
     end followingIsLambdaAfterColon
 
+    def controlExprOperandsEnabled: Boolean = in.featureEnabled(Feature.controlExprOperands)
+
+    /** The current token starts a control expression that is allowed as an infix operand */
+    def isControlExprOperand: Boolean =
+      controlExprTokens.contains(in.token) && controlExprOperandsEnabled
+
     /** Can the next lookahead token start an operand as defined by
      *  leadingOperandTokens, or is postfix ops enabled?
      *  This is used to decide whether the current token can be an infix operator.
@@ -1247,7 +1253,12 @@ object Parsers {
               in.nextToken()
               recur(parseExpr())
             case _ =>
-              if maybePostfix && !canStartOperand(in.token) then
+              if kind == ParseKind.Expr && isControlExprOperand then
+                // `if`, `while`, ... extend as far to the right as possible, so they
+                // can only be the last operand; `recur` finds no further operator,
+                // unless the expression was terminated by an <outdent>.
+                recur(if in.token == IF then ifExpr(in.offset, If) else expr1(location))
+              else if maybePostfix && !canStartOperand(in.token) then
                 val topInfo = opStack.head
                 opStack = opStack.tail
                 val od = reduceStack(base, topInfo.operand, 0, true, in.name, isType)
@@ -2662,7 +2673,10 @@ object Parsers {
 
     def expr1(location: Location = Location.Elsewhere): Tree = in.token match
       case IF =>
-        ifExpr(in.offset, If)
+        val t = ifExpr(in.offset, If)
+        // An indented last branch ends with an <outdent>, which may be followed
+        // by a leading infix operator that applies to the whole conditional.
+        if controlExprOperandsEnabled then postfixExprRest(t, location) else t
       case WHILE =>
         atSpan(in.skipToken()) {
           val cond = condExpr(DO)
@@ -2820,11 +2834,27 @@ object Parsers {
       atSpan(start, in.skipToken()) {
         val cond = condExpr(THEN)
         newLinesOpt()
-        val thenp = subExpr()
-        val elsep = if (in.token == ELSE) { in.nextToken(); subExpr() }
+        val thenp = ifBranch()
+        val elsep = if (in.token == ELSE) { in.nextToken(); ifBranch() }
                     else EmptyTree
         mkIf(cond, thenp, elsep)
       }
+
+    /** A branch of an `if`. Under `experimental.controlExprOperands`, an indented branch
+     *  ends with its <outdent>, so that in
+     *
+     *      if c then
+     *        a
+     *      else
+     *        b
+     *      + 1
+     *
+     *  the leading infix operation `+ 1` applies to the whole conditional,
+     *  not just to the `else` branch.
+     */
+    def ifBranch(): Tree =
+      if in.token == INDENT && controlExprOperandsEnabled then blockExpr()
+      else subExpr()
 
     /* When parsing (what will become) a sub sub match, that is,
      * when in a guard of case of a match, in a guard of case of a match;
@@ -2968,7 +2998,8 @@ object Parsers {
     def postfixExprRest(t: Tree, location: Location): Tree =
       infixOps(t, in.canStartExprTokens, prefixExpr, location, ParseKind.Expr,
         isOperator = !(location.inArgs && followingIsVararg())
-                     && nextCanFollowOperator(canStartInfixExprTokens))
+                     && (nextCanFollowOperator(canStartInfixExprTokens)
+                         || controlExprTokens.contains(in.lookahead.token) && controlExprOperandsEnabled))
 
     /** PrefixExpr       ::= [PrefixOperator'] SimpleExpr
      *  PrefixOperator   ::=  ‘-’ | ‘+’ | ‘~’ | ‘!’ (if not backquoted)

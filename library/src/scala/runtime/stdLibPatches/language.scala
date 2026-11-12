@@ -192,6 +192,12 @@ private[scala] object language:
      */
     @compileTimeOnly("`methodBlockEndMarkers` can only be used at compile time in import statements")
     object methodBlockEndMarkers
+
+    /** Experimental support for control expressions (`if`, `while`, `for`, `try`, `throw`)
+     *  as the last operand of an infix operation, as in `1 + if c then a else b`.
+     */
+    @compileTimeOnly("`controlExprOperands` can only be used at compile time in import statements")
+    object controlExprOperands
   end experimental
 
   /** The deprecated object contains features that are no longer officially suypported in Scala.

@@ -411,6 +411,12 @@ object language {
     @compileTimeOnly("`methodBlockEndMarkers` can only be used at compile time in import statements")
     object methodBlockEndMarkers
 
+    /** Experimental support for control expressions (`if`, `while`, `for`, `try`, `throw`)
+     *  as the last operand of an infix operation, as in `1 + if c then a else b`.
+     */
+    @compileTimeOnly("`controlExprOperands` can only be used at compile time in import statements")
+    object controlExprOperands
+
     /** Experimental support for single-line lambdas and case clause expressions after `:`
      */
     @compileTimeOnly("`relaxedLambdaSyntax` can only be used at compile time in import statements")

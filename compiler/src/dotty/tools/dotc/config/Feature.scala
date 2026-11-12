@@ -46,6 +46,7 @@ object Feature:
   val inlineTraits = experimental("inlineTraits")
   val specializedTraits = experimental("specializedTraits")
   val methodBlockEndMarkers = experimental("methodBlockEndMarkers")
+  val controlExprOperands = experimental("controlExprOperands")
 
   val nonViralExperimentalFeatures: Set[TermName] =
     Set(captureChecking, separationChecking, safe)
@@ -88,6 +89,7 @@ object Feature:
     (inlineTraits, "Allow inline traits"),
     (specializedTraits, "Allow specialized traits"),
     (methodBlockEndMarkers, "Enable experimental end markers for method blocks"),
+    (controlExprOperands, "Allow control expressions such as `if` as the last operand of an infix operation"),
   )
 
   /** Features that are now standard; the language import / -language choice is

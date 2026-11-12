@@ -224,8 +224,13 @@ object Tokens extends TokensCommon {
     | openParensTokens
     | BitSet(QUOTE, NEW)
 
+  /** Tokens starting control expressions that may appear as the last operand of
+   *  an infix operation under `experimental.controlExprOperands`.
+   */
+  final val controlExprTokens: TokenSet = BitSet(IF, WHILE, FOR, TRY, THROW)
+
   final val canStartExprTokens3: TokenSet =
-    canStartInfixExprTokens | BitSet(INDENT, IF, WHILE, FOR, TRY, THROW)
+    canStartInfixExprTokens | controlExprTokens | BitSet(INDENT)
 
   final val canStartExprTokens2: TokenSet = canStartExprTokens3 | BitSet(DO)
 
