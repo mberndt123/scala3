@@ -1,24 +1,21 @@
 import scala.language.experimental.controlExprOperands
 
-def yes = true
-def no = false
-
 @main def Test =
   // `if` as the last operand of an infix operation
-  assert((1 + if yes then 10 else 20) == 11)
-  assert((1 + if no then 10 else 20) == 21)
-  assert((2 * 3 + if no then 10 else 20) == 26)
+  assert((1 + if true then 10 else 20) == 11)
+  assert((1 + if false then 10 else 20) == 21)
+  assert((2 * 3 + if false then 10 else 20) == 26)
 
   // the `else` branch extends as far to the right as possible
-  assert((1 + if no then 10 else 20 + 300) == 321)
-  assert((1 + if yes then 10 else 20 + 300) == 11)
+  assert((1 + if false then 10 else 20 + 300) == 321)
+  assert((1 + if true then 10 else 20 + 300) == 11)
 
   // old-style syntax
-  assert((1 + if (no) 10 else 20) == 21)
+  assert((1 + if (false) 10 else 20) == 21)
 
   // as argument
   def f(x: Int, y: Int) = x - y
-  assert(f(1 + if yes then 1 else 2, 1) == 1)
+  assert(f(1 + if true then 1 else 2, 1) == 1)
 
   // other control expressions
   val opt: Option[Int] = None
@@ -30,19 +27,19 @@ def no = false
   // operator at the end of the line
   val a =
     1 +
-      if no then 10 else 20
+      if false then 10 else 20
   assert(a == 21)
 
   // leading infix operator
   val b =
     1
-    + if no then 10 else 20
+    + if false then 10 else 20
   assert(b == 21)
 
   // an indented branch ends with its outdent, so a following leading
   // infix operator applies to the whole conditional
   val c =
-    if yes then
+    if true then
       10
     else
       1
@@ -50,7 +47,7 @@ def no = false
   assert(c == 110)
 
   val d =
-    if no then
+    if false then
       10
     else
       1
@@ -58,7 +55,7 @@ def no = false
   assert(d == 101)
 
   val g = 1 +
-    if yes then
+    if true then
       10
     else
       20
@@ -67,7 +64,7 @@ def no = false
 
   // operators following the outdent are subject to the usual precedence rules
   val k = 2 *
-    if yes then
+    if true then
       10
     else
       20
@@ -76,7 +73,7 @@ def no = false
 
   // `+ 100` is indented relative to the conditional, so it still belongs to the branch
   val h =
-    if yes then
+    if true then
       10
     else
       1
