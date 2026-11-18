@@ -868,9 +868,11 @@ object Parsers {
           val res = !bq && op && loc
           res
         }
+      var contentStart = -1
       val t = enclosed(LBRACE, {
         canRewrite &= in.isAfterLineEnd // test (2)
         val curOffset = in.offset
+        contentStart = curOffset
         try {
           val bodyResolved = body
           bodyResolved match
@@ -884,6 +886,14 @@ object Parsers {
         }
       })
       canRewrite &= (in.isAfterLineEnd || statCtdTokens.contains(in.token)) // test (5)
+      // Under `-source:future`, a leading infix operator directly after the closing brace
+      // applies to the enclosing control expression (see `leadingInfixAfterBlockRest`).
+      // Without braces, an operator that is at least as indented as the contents of the
+      // block would continue the block instead, so keep the braces in that case.
+      if sourceVersion.enablesLeadingInfixAfterBlock
+         && in.isIdent && in.isOperator && in.isAfterLineEnd
+         && source.column(in.offset) >= source.column(contentStart)
+      then canRewrite = false
       if canRewrite && (!underColonSyntax || sourceVersion.enablesFewerBraces) then
         val openingPatchStr =
           if !colonRequired then ""
@@ -892,8 +902,16 @@ object Parsers {
         val (startClosing, endClosing) = closingElimRegion()
         patch(source, Span(startOpening, endOpening), openingPatchStr)
         patch(source, Span(startClosing, endClosing), "")
+        lastBracesToIndentedContent = contentStart
+      else
+        lastBracesToIndentedContent = -1
       t
     }
+
+    /** If the braces of the block parsed last by `bracesToIndented` were rewritten
+     *  to indentation, the offset of the first token in that block, otherwise -1.
+     */
+    private var lastBracesToIndentedContent: Offset = -1
 
     /** Drop (...) or { ... }, replacing the closing element with `endStr` */
     def dropParensOrBraces(start: Offset, endStr: String): Unit = {
@@ -2661,12 +2679,12 @@ object Parsers {
     }
 
     def expr1(location: Location = Location.Elsewhere): Tree =
-      val start = in.offset
       val isControlExpr =
         controlExprTokens.contains(in.token)
         || isIdent(nme.inline) && in.lookahead.token == IF
+      val isSameLineTail = in.offset == sameLineTailStart
       val t = expr1Core(location)
-      if isControlExpr then controlExprRest(t, start, location) else t
+      if isControlExpr then controlExprRest(t, isSameLineTail, location) else t
 
     private val controlExprTokens = BitSet(IF, WHILE, TRY, THROW, RETURN, FOR)
 
@@ -2969,7 +2987,10 @@ object Parsers {
      *                  | InfixExpr MatchClause
      */
     def postfixExpr(location: Location = Location.Elsewhere): Tree =
-      val t = postfixExprRest(prefixExpr(location), location)
+      val first = prefixExpr(location)
+      val t =
+        if in.offset == leadingInfixAfterBlock then leadingInfixAfterBlockRest(first, location)
+        else postfixExprRest(first, location)
       if location.inArgs && followingIsVararg() then
         Typed(t, atSpan(in.skipToken()) { Ident(tpnme.WILDCARD_STAR) })
       else
@@ -2996,8 +3017,8 @@ object Parsers {
           atSpan(in.offset) { PrefixOp(termIdent(), simpleExpr(location)) }
       else simpleExpr(location)
 
-    /** Warn if the indented block starting at `start` that was just parsed is followed
-     *  by a leading infix operator that is less indented than the block, as in
+    /** The offset of a leading infix operator that directly follows a block,
+     *  i.e. that follows a closing brace or an <outdent> on a new line, as in
      *
      *      if c then
      *        a
@@ -3005,29 +3026,85 @@ object Parsers {
      *        b
      *      + 1
      *
-     *  The scanner closes the indentation region before such an operator, but the operator
-     *  is still applied to the block, i.e. here only to the `else` branch. This is
-     *  surprising, since the layout suggests that it applies to the enclosing expression.
+     *  Set by `simpleExpr`, handled by `leadingInfixAfterBlockRest`.
      */
-    def checkNoLeadingInfixAfterIndentedBlock(start: Offset): Unit =
-      if in.isIdent && in.isOperator && in.isAfterLineEnd
-         && source.column(in.offset) < source.column(start)
-      then
-        if sourceVersion.enablesLeadingInfixAfterIndentedBlock then
-          pendingLeadingInfix = in.offset
-        else
-          warning(
-            em"""Leading infix operator `${in.name}` applies only to the indented block above,
-                |not to the enclosing expression, although it is less indented than that block.
-                |Indent the operator further to make this explicit,
-                |or wrap the enclosing expression in parentheses to apply the operator to all of it.
-                |
-                |Under `-source:future`, if the indented block is the last part of a control expression
-                |(`if`, `while`, `for`, `try`, `throw` or `return`), the operator applies to that
-                |control expression. Otherwise, the operator is rejected.""")
+    private var leadingInfixAfterBlock: Offset = -1
 
-    /** The offset of a leading infix operator that follows an indented block and
-     *  that is less indented than that block (see `checkNoLeadingInfixAfterIndentedBlock`).
+    /** For an indented block noted in `leadingInfixAfterBlock`, the offset of its
+     *  first token; -1 for a block in braces that stays in braces.
+     */
+    private var leadingInfixBlockStart: Offset = -1
+
+    /** The end of the block noted in `leadingInfixAfterBlock`. */
+    private var leadingInfixBlockEnd: Offset = -1
+
+    /** Continue the infix operation starting with block `t`, which is directly followed
+     *  by a leading infix operator (see `leadingInfixAfterBlock`). Before `-source:future`,
+     *  the operator applies to the block, which is surprising, since the layout suggests
+     *  that it applies to the enclosing expression. We warn about this, and under
+     *  `-source:future-migration -rewrite`, we move the operator into the block.
+     *  Under `-source:future`, the operator does not continue the infix operation
+     *  but the enclosing control expression, see `controlExprRest`.
+     */
+    def leadingInfixAfterBlockRest(t: Tree, location: Location): Tree =
+      val opOffset = in.offset
+      val opName = in.name
+      val blockStart = leadingInfixBlockStart
+      val blockEnd = leadingInfixBlockEnd
+      leadingInfixAfterBlock = -1
+      if sourceVersion.enablesLeadingInfixAfterBlock then
+        pendingLeadingInfix = opOffset
+        postfixExprRest(t, location)
+      else
+        val howToFix =
+          if blockStart >= 0 then "Indent the operator to the level of the block"
+          else "Move the operator to the line of the closing brace"
+        val msg =
+          em"""Leading infix operator `$opName` applies only to the block above, not to the enclosing expression.
+              |$howToFix to make this explicit,
+              |or wrap the enclosing expression in parentheses to apply the operator to all of it.
+              |
+              |Under `-source:future`, if the block is the last part of a control expression
+              |(`if`, `while`, `for`, `try`, `throw` or `return`), the operator applies to that
+              |control expression. Otherwise, the operator is rejected."""
+        if MigrationVersion.LeadingInfixAfterBlock.needsPatch then
+          report.migrationWarning(
+            msg.append(rewriteNotice(`future-migration`)), source.atSpan(Span(opOffset)))
+        else
+          warning(msg, opOffset)
+        val result = postfixExprRest(t, location)
+        if MigrationVersion.LeadingInfixAfterBlock.needsPatch then
+          patchLeadingInfixAfterBlock(opOffset, blockStart, blockEnd, in.lastOffset)
+        result
+
+    /** Rewrite the infix operation with a leading infix operator at `opOffset` that ends
+     *  at `end` so that the operator applies to the preceding block also under
+     *  `-source:future`. For an indented block starting at `blockStart`, indent all lines
+     *  of the operation to the level of the block. For a block in braces ending at
+     *  `blockEnd`, move the operator to the line of the closing brace.
+     */
+    def patchLeadingInfixAfterBlock(opOffset: Offset, blockStart: Offset, blockEnd: Offset, end: Offset): Unit =
+      val text = source.textContent()
+      def indentation(offset: Offset): String =
+        val start = source.startOfLine(offset)
+        var i = start
+        while i < text.length && Chars.isWhitespace(text.charAt(i)) do i += 1
+        text.substring(start, i).nn
+      if blockStart >= 0 then
+        val opIndent = indentation(opOffset)
+        val blockIndent = indentation(blockStart)
+        if blockIndent.startsWith(opIndent) && blockIndent.length > opIndent.length then
+          val extra = blockIndent.substring(opIndent.length).nn
+          for line <- source.offsetToLine(opOffset) to source.offsetToLine(end - 1) do
+            val lineStart = source.lineToOffset(line)
+            val lineIndent = indentation(lineStart)
+            if lineIndent.startsWith(opIndent) && lineStart + lineIndent.length < text.length
+               && !Chars.isLineBreakChar(text.charAt(lineStart + lineIndent.length))
+            then patch(source, Span(lineStart + opIndent.length), extra)
+      else if (blockEnd until opOffset).forall(i => Character.isWhitespace(text.charAt(i))) then
+        patch(source, Span(blockEnd, opOffset), " ")
+
+    /** The offset of a leading infix operator that follows a block (see `leadingInfixAfterBlock`).
      *  Under `-source:future`, such an operator does not continue the infix operation
      *  that has the block as its operand. Instead, it continues the enclosing control
      *  expression, see `controlExprRest`.
@@ -3047,8 +3124,8 @@ object Parsers {
       if !in.isAfterLineEnd then sameLineTailStart = in.offset
       subExpr()
 
-    /** Under `-source:future`, continue control expression `t` starting at `start`
-     *  with a pending leading infix operator, as in
+    /** Under `-source:future`, continue control expression `t` with a pending leading
+     *  infix operator, as in
      *
      *      if c then
      *        a
@@ -3057,11 +3134,11 @@ object Parsers {
      *      + 1
      *
      *  where `+ 1` applies to the whole conditional. If the control expression is itself
-     *  a branch or body on the same line as its keyword, as the inner `if` in `else if`,
-     *  the operator is left to the enclosing control expression.
+     *  a branch or body on the same line as its keyword (`isSameLineTail`), as the inner
+     *  `if` in `else if`, the operator is left to the enclosing control expression.
      */
-    def controlExprRest(t: Tree, start: Offset, location: Location): Tree =
-      if isPendingLeadingInfix && start != sameLineTailStart then
+    def controlExprRest(t: Tree, isSameLineTail: Boolean, location: Location): Tree =
+      if isPendingLeadingInfix && !isSameLineTail then
         pendingLeadingInfix = -1
         postfixExprRest(t, location)
       else t
@@ -3111,14 +3188,18 @@ object Parsers {
           atSpan(start) { Ident(pname) }
         case LPAREN =>
           atSpan(in.offset) { makeTupleOrParens(inParensWithCommas(exprsInParensOrBindings())) }
-        case LBRACE =>
-          canApply = false
-          blockExpr()
-        case INDENT =>
+        case LBRACE | INDENT =>
           canApply = false
           val start = in.offset
+          val isIndented = in.token == INDENT
+          lastBracesToIndentedContent = -1
           val t = blockExpr()
-          checkNoLeadingInfixAfterIndentedBlock(start)
+          if in.isIdent && in.isOperator && in.isAfterLineEnd then
+            leadingInfixAfterBlock = in.offset
+            leadingInfixBlockStart =
+              if isIndented then start
+              else lastBracesToIndentedContent // braces rewritten to indentation under `-indent -rewrite`
+            leadingInfixBlockEnd = in.lastOffset
           t
         case QUOTE =>
           quote(location.inPattern)
